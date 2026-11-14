@@ -1,3 +1,28 @@
+export const INITIAL_TRANSACTIONS = [
+  { id: 'T1', date: '2026-11-12', merchant: 'Freelance Web Project', amount: 42000, type: 'CREDIT', category: 'Work Income', isAnomaly: false },
+  { id: 'T2', date: '2026-11-10', merchant: 'Home Rent Transfer', amount: 16000, type: 'DEBIT', category: 'Monthly Rent', isAnomaly: false },
+  { id: 'T3', date: '2026-11-08', merchant: 'Emergency Appliance Repair', amount: 6800, type: 'DEBIT', category: 'Home Repair', isAnomaly: true },
+  { id: 'T4', date: '2026-11-05', merchant: 'Fresh Kirana & Vegetables', amount: 1450, type: 'DEBIT', category: 'Daily Groceries', isAnomaly: false }
+];
+
+export function parseIndianBankSms(smsText) {
+  const amtMatch = smsText.match(/(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)/i);
+  const amount = amtMatch ? parseFloat(amtMatch[1].replace(/,/g, '')) : 500;
+  const isCredit = /credited|received|deposited/i.test(smsText);
+  const merchantMatch = smsText.match(/(?:to|at|from)\s+([A-Za-z0-9\s&.-]+?)(?:\s+on|\s+via|\s+UPI|\.|$)/i);
+  const merchant = merchantMatch ? merchantMatch[1].trim() : 'UPI Bank Alert';
+
+  return {
+    id: 'SMS-' + Date.now(),
+    date: new Date().toISOString().split('T')[0],
+    merchant,
+    amount,
+    type: isCredit ? 'CREDIT' : 'DEBIT',
+    category: isCredit ? 'Money Received' : 'UPI Spend',
+    isAnomaly: !isCredit && amount > 4000
+  };
+}
+
 export function parseStatementText(rawText) {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const parsedList = [];
