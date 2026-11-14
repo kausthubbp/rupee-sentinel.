@@ -1,14 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis,
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell
 } from 'recharts';
 import {
   ShieldCheck, ThumbsUp, OctagonAlert, Sparkles, ArrowRight,
   IndianRupee, Smartphone, Bike, Laptop, ShoppingBag,
-  PlusCircle, MinusCircle, MessageSquareText, GraduationCap, Wallet
+  PlusCircle, MinusCircle, MessageSquareText, Wallet
 } from 'lucide-react';
-import { INITIAL_TRANSACTIONS, RECURRING_COMMITMENTS, parseIndianBankSms } from './dataEngine';
+import { INITIAL_TRANSACTIONS, parseIndianBankSms } from './dataEngine';
 
 function randomNormal(mean, stdDev) {
   const u1 = Math.max(1e-7, Math.random());
@@ -17,7 +17,7 @@ function randomNormal(mean, stdDev) {
   return mean + z0 * stdDev;
 }
 
-// 500-Run Monte Carlo Cash-Flow Engine
+// 500-Run Monte Carlo Cash-Flow Engine (runs silently under the hood)
 function runMonteCarloSimulation(currentBalance, purchaseAmount, purchaseDay, runs = 500, days = 60) {
   const allPaths = Array.from({ length: runs }, () => new Array(days));
 
@@ -50,15 +50,13 @@ function runMonteCarloSimulation(currentBalance, purchaseAmount, purchaseDay, ru
     const dayBalances = allPaths.map(p => p[d]).sort((a, b) => a - b);
     const p10 = Math.round(dayBalances[Math.floor(runs * 0.10)]);
     const p50 = Math.round(dayBalances[Math.floor(runs * 0.50)]);
-    const p90 = Math.round(dayBalances[Math.floor(runs * 0.90)]);
 
     if (p10 < 10000) dangerDays++;
 
     timeline.push({
       day: `Day ${d + 1}`,
       worstCase: p10,
-      normalBalance: p50,
-      bestCase: p90
+      normalBalance: p50
     });
   }
 
@@ -66,15 +64,7 @@ function runMonteCarloSimulation(currentBalance, purchaseAmount, purchaseDay, ru
   return { timeline, shortageRisk };
 }
 
-const BACKTEST_DATA = Array.from({ length: 30 }, (_, i) => {
-  const day = i + 1;
-  const actual = Math.round(68000 - day * 850 + (day >= 15 ? 40000 : 0) + Math.sin(day) * 1800);
-  const predicted = Math.round(actual + Math.cos(day * 0.7) * 1150);
-  return { day: `Day ${day}`, actual, predicted };
-});
-
 export default function App() {
-  const [judgeMode, setJudgeMode] = useState(false);
   const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
   const [currentBalance, setCurrentBalance] = useState(54200);
   const [purchaseAmount, setPurchaseAmount] = useState(15000);
@@ -116,7 +106,6 @@ export default function App() {
       amount,
       type,
       category: type === 'CREDIT' ? 'Money Received' : 'Daily Expense',
-      zScore: amount > 4000 && type === 'DEBIT' ? 3.2 : 0.4,
       isAnomaly: amount > 4000 && type === 'DEBIT'
     };
     setTransactions(prev => [newTx, ...prev]);
@@ -138,7 +127,7 @@ export default function App() {
     <div className="min-h-screen bg-[#f4f8ff] text-slate-900 font-sans pb-16">
       {/* TOP WHITE & ROYAL BLUE BAR */}
       <header className="bg-white border-b-2 border-blue-100 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-5xl mx-auto px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="max-w-5xl mx-auto px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-200">
               <ShieldCheck className="w-7 h-7" />
@@ -148,23 +137,11 @@ export default function App() {
               <p className="text-xs font-medium text-blue-600">Your Simple Money Guard</p>
             </div>
           </div>
-
-          <button
-            onClick={() => setJudgeMode(!judgeMode)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold border-2 transition ${
-              judgeMode
-                ? 'bg-blue-600 text-white border-blue-600 shadow'
-                : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-            }`}
-          >
-            <GraduationCap className="w-4 h-4" />
-            {judgeMode ? 'Judge Math Mode: ON' : 'For Judges: Show Math'}
-          </button>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-5 pt-7 space-y-7">
-        {/* ROW 1: 3 SIMPLE MONEY BUCKETS (LIKE A MONEY JAR) */}
+        {/* ROW 1: 3 SIMPLE MONEY BUCKETS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* Bucket 1: Total Money */}
           <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-3xl p-6 shadow-lg shadow-blue-200">
@@ -214,15 +191,13 @@ export default function App() {
 
         {/* ROW 2: BIG TRAFFIC-LIGHT PURCHASE HELPER */}
         <div className="bg-white border-2 border-blue-100 rounded-3xl p-6 md:p-8 shadow-sm space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-xl font-extrabold text-blue-950">
-                Should I Buy Something Big?
-              </h2>
-              <p className="text-sm text-slate-500">
-                Tap an item below to see if your bill money stays safe.
-              </p>
-            </div>
+          <div>
+            <h2 className="text-xl font-extrabold text-blue-950">
+              Should I Buy Something Big?
+            </h2>
+            <p className="text-sm text-slate-500">
+              Tap an item below to see if your bill money stays safe.
+            </p>
           </div>
 
           {/* Visual Item Picture Buttons */}
@@ -307,7 +282,7 @@ export default function App() {
                 <h3 className={`text-lg font-extrabold ${isDanger ? 'text-red-700' : 'text-emerald-700'}`}>
                   {isDanger
                     ? `STOP! Buying on Day ${purchaseDay} will hurt your Rent & EMI!`
-                    : `YES! Safe to buy ₹${purchaseAmount.toLocaleString('en-IN')} on Day ${purchaseDay}.`}
+                    : `YES! Safe to buy ₹${purchaseAmount.toLocaleString('en-IN')} on Day${purchaseDay}.`}
                 </h3>
                 <p className="text-xs font-medium opacity-85 mt-0.5">
                   {isDanger
@@ -332,7 +307,7 @@ export default function App() {
 
         {/* ROW 3: TWO CLEAR CHARTS SIDE BY SIDE */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Chart 1: 60-Day Money Line Chart (7 cols) */}
+          {/* Chart 1: 60-Day Money Line Chart */}
           <div className="lg:col-span-7 bg-white border-2 border-blue-100 rounded-3xl p-6 shadow-sm space-y-3">
             <div>
               <h2 className="text-base font-extrabold text-blue-950">
@@ -355,11 +330,7 @@ export default function App() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                   <XAxis dataKey="day" stroke="#64748b" tick={{ fontSize: 11 }} interval={9} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={v => `₹${Math.round(v / 1000)}k`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderRadius: '14px' }}
-                    formatter={(val, name) => [
-                      `₹${Number(val).toLocaleString('en-IN')}`,
+                  <YAxis stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={v => `₹${Math.round(v / 1000)}k`} /> <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderRadius: '14px' }} formatter={(val, name) => [ `₹${Number(val).toLocaleString('en-IN')}`,
                       name === 'normalBalance' ? 'Expected Money' : 'If Income Delays'
                     ]}
                   />
@@ -377,7 +348,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Chart 2: Visual Money Bucket Bar Chart (5 cols) */}
+          {/* Chart 2: Visual Money Bucket Bar Chart */}
           <div className="lg:col-span-5 bg-white border-2 border-blue-100 rounded-3xl p-6 shadow-sm space-y-3">
             <div>
               <h2 className="text-base font-extrabold text-blue-950">
@@ -392,11 +363,7 @@ export default function App() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={bucketChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                  <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={v => `₹${Math.round(v / 1000)}k`} />
-                  <YAxis type="category" dataKey="name" width={105} stroke="#334155" tick={{ fontSize: 11, fontWeight: 600 }} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderRadius: '14px' }}
-                    formatter={val => [`₹${Number(val).toLocaleString('en-IN')}`, 'Amount']}
+                  <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={v => `₹${Math.round(v / 1000)}k`} /> <YAxis type="category" dataKey="name" width={105} stroke="#334155" tick={{ fontSize: 11, fontWeight: 600 }} /> <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderRadius: '14px' }} formatter={val => [`₹${Number(val).toLocaleString('en-IN')}`, 'Amount']}
                   />
                   <Bar dataKey="amount" radius={[0, 10, 10, 0]} barSize={26}>
                     {bucketChartData.map((entry, idx) => (
@@ -421,7 +388,6 @@ export default function App() {
               Tap a quick button below or paste any bank SMS alert:
             </p>
 
-            {/* 1-Tap Village/Kid Friendly Buttons */}
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => handleQuickAction('CREDIT', 10000, 'Work / Shop Earnings')}
@@ -461,24 +427,7 @@ export default function App() {
               {transactions.slice(0, 4).map(tx => (
                 <div
                   key={tx.id}
-                  className={`flex items-center justify-between p-3 rounded-2xl border text-xs ${
-                    tx.isAnomaly
-                      ? 'bg-red-50 border-red-200'
-                      : 'bg-blue-50/40 border-blue-100'
-                  }`}
-                >
-                  <div>
-                    <p className="font-bold text-slate-900">{tx.merchant}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {tx.category}
-                      {tx.isAnomaly && (
-                        <span className="ml-2 text-red-600 font-bold">
-                          • Extra High Spend! {judgeMode ? `(Z=${tx.zScore}σ)` : ''}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <span className={`font-extrabold ${tx.type === 'CREDIT' ? 'text-emerald-600' : 'text-slate-900'}`}>
+                  className={`flex items-center justify-between p-3 rounded-2xl border text-xs ${ tx.isAnomaly ? 'bg-red-50 border-red-200' : 'bg-blue-50/40 border-blue-100' }`} > <div> <p className="font-bold text-slate-900">{tx.merchant}</p> <p className="text-[11px] text-slate-500"> {tx.category} {tx.isAnomaly && ( <span className="ml-2 text-red-600 font-bold"> • Extra High Spend! </span> )} </p> </div> <span className={`font-extrabold ${tx.type === 'CREDIT' ? 'text-emerald-600' : 'text-slate-900'}`}>
                     {tx.type === 'CREDIT' ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN')}
                   </span>
                 </div>
@@ -486,41 +435,6 @@ export default function App() {
             </div>
           </div>
         </div>
-
-        {/* JUDGE PROOF PANEL (HIDDEN UNTIL CLICKED) */}
-        {judgeMode && (
-          <div className="bg-white border-2 border-blue-600 rounded-3xl p-6 shadow-md space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
-                  Technical Proof for Judges
-                </span>
-                <h2 className="text-lg font-extrabold text-blue-950">
-                  500-Run Monte Carlo Engine & 30-Day Backtest (95.82% Accuracy)
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Shortage Probability: <strong>{shortageRisk}%</strong> • MAPE Error: <strong>4.18%</strong> • RMSE: <strong>₹1,142</strong>
-                </p>
-              </div>
-            </div>
-
-            <div className="h-60 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={BACKTEST_DATA} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="day" stroke="#64748b" tick={{ fontSize: 11 }} interval={4} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={v => `₹${Math.round(v / 1000)}k`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderRadius: '12px' }}
-                    formatter={val => `₹${Number(val).toLocaleString('en-IN')}`}
-                  />
-                  <Line type="monotone" dataKey="actual" name="Actual Balance" stroke="#dc2626" strokeWidth={2.5} dot={false} />
-                  <Line type="monotone" dataKey="predicted" name="Model Prediction" stroke="#2563eb" strokeDasharray="5 5" strokeWidth={2.5} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );
