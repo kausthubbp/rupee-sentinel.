@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell
@@ -6,7 +6,7 @@ import {
 import {
   ShieldCheck, ThumbsUp, OctagonAlert, Sparkles, ArrowRight,
   IndianRupee, Smartphone, Bike, Laptop, ShoppingBag,
-  PlusCircle, MinusCircle, MessageSquareText, Wallet
+  PlusCircle, MinusCircle, MessageSquareText, Wallet, Upload, FileCheck2
 } from 'lucide-react';
 import { INITIAL_TRANSACTIONS, parseIndianBankSms } from './dataEngine';
 
@@ -64,12 +64,63 @@ function runMonteCarloSimulation(currentBalance, purchaseAmount, purchaseDay, ru
   return { timeline, shortageRisk };
 }
 
+// Parse uploaded CSV or TXT bank statement lines
+function parseStatementText(rawText) {
+  const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const parsedList = [];
+
+  lines.forEach((line, idx) => {
+    if (idx === 0 && /date|narration|particulars|amount|debit|credit/i.test(line)) return;
+
+    const parts = line.split(',').map(p => p.trim().replace(/^"|"$/g, ''));
+    let merchant = 'Bank Statement Entry';
+    let amount = 0;
+    let type = 'DEBIT';
+
+    if (parts.length >= 3) {
+      merchant = parts[1] || parts[0];
+      const numericCells = parts
+        .slice(2)
+        .map(val => parseFloat(val.replace(/[₹,Rs\s]/gi, '')))
+        .filter(n => !isNaN(n) && n > 0);
+
+      if (numericCells.length > 0) {
+        amount = numericCells[0];
+      }
+      if (/cr|credit|deposit|salary|freelance|upi\/cr/i.test(line)) {
+        type = 'CREDIT';
+      }
+    } else {
+      const amtMatch = line.match(/(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i);
+      if (amtMatch) amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+      if (/cr|credit|received|deposited/i.test(line)) type = 'CREDIT';
+      merchant = line.slice(0, 28);
+    }
+
+    if (amount > 0) {
+      parsedList.push({
+        id: 'ST-' + Date.now() + '-' + idx,
+        date: new Date().toISOString().split('T')[0],
+        merchant,
+        amount,
+        type,
+        category: type === 'CREDIT' ? 'Statement Income' : 'Statement Spend',
+        isAnomaly: type === 'DEBIT' && amount > 4000
+      });
+    }
+  });
+
+  return parsedList;
+}
+
 export default function App() {
   const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
   const [currentBalance, setCurrentBalance] = useState(54200);
   const [purchaseAmount, setPurchaseAmount] = useState(15000);
   const [purchaseDay, setPurchaseDay] = useState(3);
   const [smsInput, setSmsInput] = useState('');
+  const [uploadStatus, setUploadStatus] = useState('');
+  const fileInputRef = useRef(null);
 
   const fixedBillsTotal = 26350;
   const emergencyPiggyBank = 10000;
@@ -97,6 +148,44 @@ export default function App() {
     { name: 'Emergency Savings', amount: emergencyPiggyBank, color: '#6366f1' },
     { name: 'Free to Spend', amount: safeToSpendToday, color: '#16a34a' }
   ];
+
+  const applyNewTransactions = (newItems, sourceLabel) => {
+    if (newItems.length === 0) {
+      setUploadStatus('Could not find valid amounts in that file. Try a CSV or TXT statement.');
+      return;
+    }
+    setTransactions(prev => [...newItems, ...prev]);
+    const netChange = newItems.reduce(
+      (sum, item) => (item.type === 'CREDIT' ? sum + item.amount : sum - item.amount),
+      0
+    );
+    setCurrentBalance(prev => Math.max(0, prev + netChange));
+    setUploadStatus(`Added ${newItems.length} entries from ${sourceLabel}!`);
+  };
+
+  const handleStatementUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = String(event.target?.result || '');
+      const extracted = parseStatementText(text);
+      applyNewTransactions(extracted, file.name);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleSampleStatement = () => {
+    const sampleCsv = [
+      'Date,Description,Amount,Type',
+      '2026-11-14,Client Design Payment,18000,CREDIT',
+      '2026-11-14,Local Grocery & Ration,2400,DEBIT',
+      '2026-11-14,Festival Clothes Shopping,5200,DEBIT'
+    ].join('\n');
+    const extracted = parseStatementText(sampleCsv);
+    applyNewTransactions(extracted, 'Sample Bank Statement');
+  };
 
   const handleQuickAction = (type, amount, label) => {
     const newTx = {
@@ -127,7 +216,7 @@ export default function App() {
     <div className="min-h-screen bg-[#f4f8ff] text-slate-900 font-sans pb-16">
       {/* TOP WHITE & ROYAL BLUE BAR */}
       <header className="bg-white border-b-2 border-blue-100 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-5xl mx-auto px-5 py-4 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-5 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-200">
               <ShieldCheck className="w-7 h-7" />
@@ -136,6 +225,24 @@ export default function App() {
               <h1 className="text-xl font-extrabold text-blue-950 tracking-tight">Rupee Sentinel</h1>
               <p className="text-xs font-medium text-blue-600">Your Simple Money Guard</p>
             </div>
+          </div>
+
+          {/* Quick Header Statement Upload Button */}
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.txt"
+              onChange={handleStatementUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-200 transition"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Bank Statement
+            </button>
           </div>
         </div>
       </header>
@@ -282,7 +389,7 @@ export default function App() {
                 <h3 className={`text-lg font-extrabold ${isDanger ? 'text-red-700' : 'text-emerald-700'}`}>
                   {isDanger
                     ? `STOP! Buying on Day ${purchaseDay} will hurt your Rent & EMI!`
-                    : `YES! Safe to buy ₹${purchaseAmount.toLocaleString('en-IN')} on Day${purchaseDay}.`}
+                    : `YES! Safe to buy ₹${purchaseAmount.toLocaleString('en-IN')} on Day ${purchaseDay}.`}
                 </h3>
                 <p className="text-xs font-medium opacity-85 mt-0.5">
                   {isDanger
@@ -330,7 +437,11 @@ export default function App() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                   <XAxis dataKey="day" stroke="#64748b" tick={{ fontSize: 11 }} interval={9} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={v => `₹${Math.round(v / 1000)}k`} /> <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderRadius: '14px' }} formatter={(val, name) => [ `₹${Number(val).toLocaleString('en-IN')}`,
+                  <YAxis stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={v => `₹${Math.round(v / 1000)}k`} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderRadius: '14px' }}
+                    formatter={(val, name) => [
+                      `₹${Number(val).toLocaleString('en-IN')}`,
                       name === 'normalBalance' ? 'Expected Money' : 'If Income Delays'
                     ]}
                   />
@@ -341,101 +452,4 @@ export default function App() {
                     strokeDasharray="5 5"
                     label={{ value: 'RED DANGER LINE (₹10k)', fill: '#dc2626', fontSize: 11, fontWeight: 'bold', position: 'insideBottomRight' }}
                   />
-                  <Area type="monotone" dataKey="normalBalance" stroke="#2563eb" fill="url(#blueWater)" strokeWidth={3} />
-                  <Area type="monotone" dataKey="worstCase" stroke="#f59e0b" fill="none" strokeDasharray="4 4" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Chart 2: Visual Money Bucket Bar Chart */}
-          <div className="lg:col-span-5 bg-white border-2 border-blue-100 rounded-3xl p-6 shadow-sm space-y-3">
-            <div>
-              <h2 className="text-base font-extrabold text-blue-950">
-                2. Where Your Money Goes
-              </h2>
-              <p className="text-xs text-slate-500">
-                See how your bank balance is divided today.
-              </p>
-            </div>
-
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={bucketChartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                  <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={v => `₹${Math.round(v / 1000)}k`} /> <YAxis type="category" dataKey="name" width={105} stroke="#334155" tick={{ fontSize: 11, fontWeight: 600 }} /> <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderRadius: '14px' }} formatter={val => [`₹${Number(val).toLocaleString('en-IN')}`, 'Amount']}
-                  />
-                  <Bar dataKey="amount" radius={[0, 10, 10, 0]} barSize={26}>
-                    {bucketChartData.map((entry, idx) => (
-                      <Cell key={idx} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* ROW 4: 1-TAP TEST BUTTONS & RECENT PASSBOOK */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Easy Entry Box */}
-          <div className="bg-white border-2 border-blue-100 rounded-3xl p-6 shadow-sm space-y-4">
-            <div className="flex items-center gap-2">
-              <MessageSquareText className="w-5 h-5 text-blue-600" />
-              <h2 className="text-base font-extrabold text-blue-950">Add Money In or Out</h2>
-            </div>
-            <p className="text-xs text-slate-500">
-              Tap a quick button below or paste any bank SMS alert:
-            </p>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => handleQuickAction('CREDIT', 10000, 'Work / Shop Earnings')}
-                className="p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center justify-center gap-2 transition"
-              >
-                <PlusCircle className="w-4 h-4 text-emerald-600" /> + ₹10,000 Earned
-              </button>
-              <button
-                onClick={() => handleQuickAction('DEBIT', 4800, 'Big Market / Food Spend')}
-                className="p-3 rounded-2xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-800 font-bold text-xs flex items-center justify-center gap-2 transition"
-              >
-                <MinusCircle className="w-4 h-4 text-red-600" /> - ₹4,800 Big Spend
-              </button>
-            </div>
-
-            <form onSubmit={handleParseSms} className="flex gap-2 pt-1">
-              <input
-                type="text"
-                value={smsInput}
-                onChange={e => setSmsInput(e.target.value)}
-                placeholder="Or paste bank SMS here..."
-                className="flex-1 rounded-xl bg-blue-50/50 border border-blue-200 px-3 py-2 text-xs focus:outline-none focus:border-blue-600"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition"
-              >
-                Read SMS
-              </button>
-            </form>
-          </div>
-
-          {/* Simple Passbook */}
-          <div className="bg-white border-2 border-blue-100 rounded-3xl p-6 shadow-sm space-y-3">
-            <h2 className="text-base font-extrabold text-blue-950">Your Simple Passbook</h2>
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {transactions.slice(0, 4).map(tx => (
-                <div
-                  key={tx.id}
-                  className={`flex items-center justify-between p-3 rounded-2xl border text-xs ${ tx.isAnomaly ? 'bg-red-50 border-red-200' : 'bg-blue-50/40 border-blue-100' }`} > <div> <p className="font-bold text-slate-900">{tx.merchant}</p> <p className="text-[11px] text-slate-500"> {tx.category} {tx.isAnomaly && ( <span className="ml-2 text-red-600 font-bold"> • Extra High Spend! </span> )} </p> </div> <span className={`font-extrabold ${tx.type === 'CREDIT' ? 'text-emerald-600' : 'text-slate-900'}`}>
-                    {tx.type === 'CREDIT' ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
+                  <Area type="monotone" dataKey="normalBalance" stroke="#2563eb" fill="url(#blueWater)" stroke
